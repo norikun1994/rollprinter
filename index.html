@@ -115,8 +115,8 @@ ${eposContentXml}
         <text>区分: ${type}\n</text>
         <text>金額: ￥${Number(amount).toLocaleString()}\n</text>
         <text>備考: ${escapeXml(memo)}\n</text>
-        <text>------------------------\n\n\n</text>
-        ⁠<cut type="feed"/>⁠
+        <text>--------------------------------\n\n\n</text>
+        <cut type="feed"/>
       </epos-print>`;
       sendToPrinter(xml);
     }
