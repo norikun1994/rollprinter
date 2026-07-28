@@ -116,7 +116,7 @@ ${eposContentXml}
         <text>金額: ￥${Number(amount).toLocaleString()}\n</text>
         <text>備考: ${escapeXml(memo)}\n</text>
         <text>------------------------\n\n\n</text>
-        ⁠<cut type="full"/>⁠
+        ⁠<cut type="feed"/>⁠
       </epos-print>`;
       sendToPrinter(xml);
     }
