@@ -1,1 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>アジェンダチーム現金管理装置</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; margin: 15px; background: #f4f4f9; }
+    h2 { border-bottom: 2px solid #0066cc; color: #333; padding-bottom: 5px; }
+    .card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    label { display: block; margin-top: 10px; font-weight: bold; font-size: 0.9em; }
+    input, textarea, select { width: 100%; padding: 10px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; font-size: 16px; }
+    button { width: 100%; padding: 12px; margin-top: 15px; background: #0066cc; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; }
+    button:active { background: #004c99; }
+    .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .result-box { background: #eef6ff; padding: 10px; border-radius: 5px; margin-top: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
 
+  <h2>TM-m30III 簡易ツール</h2>
+
+  <!-- ① 任意テキスト印刷 -->
+  <div class="card">
+    <h3>1. 自由テキスト印刷</h3>
+    <textarea id="freeText" rows="3" placeholder="印刷したい文字を入力"></textarea>
+    <button onclick="printFreeText()">テキストを印刷</button>
+  </div>
+
+  <!-- ② 入出金記録 -->
+  <div class="card">
+    <h3>2. 現金 入出金記録</h3>
+    <label>区分</label>
+    <select id="cashType">
+      <option value="入金">入金</option>
+      <option value="出金">出金</option>
+    </select>
+    <label>金額 (円)</label>
+    <input type="number" id="cashAmount" placeholder="例: 5000">
+    <label>メモ / 理由</label>
+    <input type="text" id="cashMemo" placeholder="例: 釣銭補充、備品購入など">
+    <button onclick="printCashFlow()">入出金レシート印刷</button>
+  </div>
+
+  <!-- ③ 精算・誤差計算 -->
+  <div class="card">
+    <h3>3. レジ締め・精算（誤差計算）</h3>
+    <label>理論上のレジ残高 (円)</label>
+    <input type="number" id="theoreticalAmount" placeholder="例: 50000" oninput="calculateDifference()">
+    
+    <label>実際の現金数え上げ</label>
+    <div class="calc-grid">
+      <div>10,000円: <input type="number" class="coin" data-val="10000" value="0" oninput="calculateDifference()">枚</div>
+      <div>5,000円: <input type="number" class="coin" data-val="5000" value="0" oninput="calculateDifference()">枚</div>
+      <div>2,000円: <input type="number" class="coin" data-val="2000" value="0" oninput="calculateDifference()">枚</div>
+      <div>1,000円: <input type="number" class="coin" data-val="1000" value="0" oninput="calculateDifference()">枚</div>
+      <div>500円: <input type="number" class="coin" data-val="500" value="0" oninput="calculateDifference()">枚</div>
+      <div>100円: <input type="number" class="coin" data-val="100" value="0" oninput="calculateDifference()">枚</div>
+      <div>50円: <input type="number" class="coin" data-val="50" value="0" oninput="calculateDifference()">枚</div>
+      <div>10円: <input type="number" class="coin" data-val="10" value="0" oninput="calculateDifference()">枚</div>
+      <div>5円: <input type="number" class="coin" data-val="5" value="0" oninput="calculateDifference()">枚</div>
+      <div>1円: <input type="number" class="coin" data-val="1" value="0" oninput="calculateDifference()">枚</div>
+    </div>
+
+    <div class="result-box">
+      現金の合計: <span id="actualTotal">0</span> 円<br>
+      過不足（誤差）: <span id="diffTotal">0</span> 円
+    </div>
+
+    <button onclick="printSettlement()">精算レポート印刷</button>
+  </div>
+
+  <script>
+    // 先ほど作成したiPhoneショートカットの「名前」をここに入力
+    const SHORTCUT_NAME = "印字制御装置"; 
+
+    // エプソンのTM-m30IIIが受け取るSOAP形式のXMLに変換して送信する関数
+    function sendToPrinter(eposContentXml) {
+      const fullSoapXml = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+<s:Body>
+${eposContentXml}
+</s:Body>
+</s:Envelope>`;
+
+      // iPhoneのショートカットアプリにデータを渡して直接実行（ブラウザのCORS制限を完全回避）
+      const shortcutUrl = `shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT_NAME)}&input=${encodeURIComponent(fullSoapXml)}`;
+      window.location.href = shortcutUrl;
+    }
+
+    function printFreeText() {
+      const text = document.getElementById('freeText').value;
+      if(!text) return alert("文字を入力してください");
+      
+      const xml = `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+        <text lang="ja"/>
+        <text>${escapeXml(text)}\n\n\n</text>
+        <cut type="feed"/>
+      </epos-print>`;
+      sendToPrinter(xml);
+    }
+
+    function printCashFlow() {
+      const type = document.getElementById('cashType').value;
+      const amount = document.getElementById('cashAmount').value;
+      const memo = document.getElementById('cashMemo').value;
+      const date = new Date().toLocaleString('ja-JP');
+
+      if(!amount) return alert("金額を入力してください");
+
+      const xml = `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+        <text lang="ja"/>
+        <text align="center" width="2" height="2">【${type}伝票】\n\n</text>
+        <text align="left">日時: ${date}\n</text>
+        <text>区分: ${type}\n</text>
+        <text>金額: ￥${Number(amount).toLocaleString()}\n</text>
+        <text>備考: ${escapeXml(memo)}\n</text>
+        <text>--------------------------------\n\n\n</text>
+        <cut type="feed"/>
+      </epos-print>`;
+      sendToPrinter(xml);
+    }
+
+    function calculateDifference() {
+      const theoretical = Number(document.getElementById('theoreticalAmount').value) || 0;
+      let actual = 0;
+      
+      document.querySelectorAll('.coin').forEach(input => {
+        const val = Number(input.dataset.val);
+        const count = Number(input.value) || 0;
+        actual += val * count;
+      });
+
+      const diff = actual - theoretical;
+
+      document.getElementById('actualTotal').innerText = actual.toLocaleString();
+      document.getElementById('diffTotal').innerText = (diff > 0 ? "+" : "") + diff.toLocaleString();
+      return { theoretical, actual, diff };
+    }
+
+    function printSettlement() {
+      const { theoretical, actual, diff } = calculateDifference();
+      const date = new Date().toLocaleString('ja-JP');
+
+      const xml = `<epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">
+        <text lang="ja"/>
+        <text align="center" width="2" height="2">【日次精算レポート】\n\n</text>
+        <text align="left">日時: ${date}\n</text>
+        <text>--------------------------------\n</text>
+        <text>理論残高: ￥${theoretical.toLocaleString()}\n</text>
+        <text>実レジ現金: ￥${actual.toLocaleString()}\n</text>
+        <text width="2" height="1">過不足額: ￥${(diff > 0 ? "+" : "") + diff.toLocaleString()}\n</text>
+        <text width="1" height="1">--------------------------------\n\n\n</text>
+        <cut type="feed"/>
+      </epos-print>`;
+      sendToPrinter(xml);
+    }
+
+    function escapeXml(unsafe) {
+      if(!unsafe) return '';
+      return unsafe.replace(/[<>&'"]/g, function (c) {
+        switch (c) {
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '&': return '&amp;';
+          case '\'': return '&apos;';
+          case '"': return '&quot;';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
